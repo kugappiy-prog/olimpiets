@@ -20,11 +20,11 @@ export const SORTS = [
 ];
 
 export function defaultFilters() {
-  return { category: 'door', q: '', purpose: null, thermo: false, custom: false, band: null, series: [], widths: [], fit: false, sort: 'cheap' };
+  return { category: 'door', q: '', purpose: null, thermo: false, mirror: false, custom: false, band: null, series: [], widths: [], fit: false, sort: 'cheap' };
 }
 
 export function activeCount(f) {
-  return [f.q.trim(), f.purpose, f.thermo, f.custom, f.band, f.series.length, f.widths.length, f.fit].filter(Boolean).length;
+  return [f.q.trim(), f.purpose, f.thermo, f.mirror, f.custom, f.band, f.series.length, f.widths.length, f.fit].filter(Boolean).length;
 }
 
 const widthOf = (size) => size.split('x')[0];
@@ -36,6 +36,52 @@ export function seriesList(items) {
 export function widthList(items) {
   const widths = new Set(items.filter((i) => i.kind === 'door').flatMap((i) => i.sizes.map(widthOf)));
   return [...widths].sort((a, b) => Number(a) - Number(b));
+}
+
+// Зеркальное стекло в стеклопакете это ещё не зеркало на двери, поэтому его не считаем.
+export function hasMirror(item) {
+  return item.specs.some(([key, value]) => !/стеклопакет/i.test(key) && /зеркал/i.test(value));
+}
+
+function contourCount(item) {
+  const spec = item.specs.find(([key, value]) => /контур/i.test(`${key} ${value}`));
+  if (!spec) return null;
+  const value = spec[1];
+  const named = value.match(/(\d+)\s*контур/i);
+  if (named) return Number(named[1]);
+  if (value.includes('(')) return Number(value.match(/\d+/)?.[0]) || null;
+  const numbers = value.split('+').map((part) => Number(part.match(/\d+/)?.[0]));
+  return numbers.every(Boolean) ? numbers.reduce((a, b) => a + b, 0) : null;
+}
+
+function leafThickness(item) {
+  const spec = item.specs.find(([key]) => /толщина.*полотна/i.test(key));
+  if (!spec) return null;
+  // У ELARTUM значение вида «97 мм/97 мм»: короб и полотно, берём полотно.
+  return spec[1].split('/').pop().match(/\d+/)?.[0] ?? null;
+}
+
+const contourWord = (n) => (n === 1 ? 'контур' : n < 5 ? 'контура' : 'контуров');
+
+export function doorFacts(item) {
+  const thickness = leafThickness(item);
+  const contours = contourCount(item);
+  return [
+    thickness && `Полотно ${thickness} мм`,
+    contours && `${contours} ${contourWord(contours)}`,
+    item.attrs.thermo && 'Терморазрыв',
+    hasMirror(item) && 'С зеркалом',
+  ].filter(Boolean);
+}
+
+// Ответы мастера подбора превращаем в обычные фильтры: дальше клиент может их менять.
+export function pickFilters({ where, warm, budget }) {
+  return {
+    ...defaultFilters(),
+    purpose: where === 'house' ? 'street' : 'flat',
+    thermo: where === 'house' && warm === 'yes',
+    band: budget && budget !== 'any' ? budget : null,
+  };
 }
 
 function matches(item, f, fits) {
@@ -51,6 +97,7 @@ function matches(item, f, fits) {
   if (f.purpose === 'flat' && item.attrs.thermo) return false;
   if (f.purpose === 'street' && !item.attrs.street) return false;
   if (f.thermo && !item.attrs.thermo) return false;
+  if (f.mirror && !hasMirror(item)) return false;
   if (f.custom && !item.attrs.nonstandard) return false;
   if (f.fit && !fits(item)) return false;
   return true;

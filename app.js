@@ -1,7 +1,7 @@
-import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, seriesList, widthList } from './filters.js';
-import { doorsFit, measureFigures } from './measure.js';
-import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js';
-import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js';
+import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611031323';
+import { doorsFit, measureFigures } from './measure.js?v=202611031323';
+import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611031323';
+import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611031323';
 
 const CONTACT = { email: 'kugappiy@yandex.ru', telegram: 'jamesanji' };
 const TELEGRAM_URL = `https://t.me/${CONTACT.telegram}`;
@@ -58,7 +58,7 @@ function setCart(next) {
 function renderTabs() {
   const count = cart.reduce((sum, line) => sum + line.qty, 0);
   const route = location.hash.split('/')[1] || '';
-  const inCatalog = ['item', 'services', 'custom', 'wholesale', 'faq'].includes(route);
+  const inCatalog = ['item', 'services', 'custom', 'wholesale', 'faq', 'pick'].includes(route);
   const current = inCatalog ? '' : route === 'checkout' ? 'cart' : route;
   tabs.innerHTML = [['', 'Каталог', 'catalog'], ['measure', 'Замер', 'measure'], ['works', 'Отзывы', 'works'], ['about', 'О нас', 'about'], ['cart', 'Корзина', 'cart']]
     .map(([path, label, icon]) => `<a href="#/${path}" ${current === path ? 'aria-current="page"' : ''}>
@@ -90,12 +90,12 @@ function productCard(item) {
   const image = item.images[0]
     ? `<img src="${item.images[0]}" alt="" loading="lazy">`
     : '<span class="noimg">Фото уточняется</span>';
-  const tags = [item.attrs.thermo && 'терморазрыв', item.attrs.street && 'на улицу'].filter(Boolean).join(' · ');
+  const facts = item.kind === 'door' ? doorFacts(item).slice(0, 2).join(' · ') : '';
   return `<a class="card" href="#/item/${item.id}">
     <div class="photo">${image}</div>
     <div class="price">${item.price ? money(item.price) : 'Цена по запросу'}</div>
     <div class="title">${esc(item.name)}${duplicateNames().has(item.name) ? `, ${esc(item.sizes.map(sizeLabel).join(', '))}` : ''}</div>
-    <div class="tags">${esc(tags || item.series)}</div>
+    <div class="tags">${esc(facts || item.series)}</div>
   </a>`;
 }
 
@@ -116,6 +116,7 @@ function filterPanel() {
     <span class="label">Особенности</span>
     <div class="opts">
       ${option('toggle', 'thermo', 'Терморазрыв', f.thermo, count({ thermo: true }))}
+      ${option('toggle', 'mirror', 'С зеркалом', f.mirror, count({ mirror: true }))}
       ${option('toggle', 'custom', 'Можно свой размер', f.custom, count({ custom: true }))}
     </div>
     <span class="label">Цена</span>
@@ -133,7 +134,7 @@ function filterPanel() {
 function catalogGrid() {
   const f = state.filters;
   const items = applyFilters(state.catalog.items, f, fitsOpening);
-  const count = `<p class="muted found">Найдено: ${items.length}</p>`;
+  const count = `<p class="muted found">Найдено: ${items.length}${activeCount(f) ? ' <button type="button" class="link small" data-reset>Сбросить</button>' : ''}</p>`;
   if (!items.length) return `${count}<div class="empty"><p class="muted">Ничего не нашлось. Попробуйте смягчить фильтры.</p></div>`;
   // Промо между карточками: цены видны сразу, а доверие и кэшбэк не теряются внизу длинного списка.
   if (activeCount(f) || items.length <= 6) return `${count}<div class="grid">${items.map(productCard).join('')}</div>`;
@@ -159,6 +160,7 @@ function renderFilterBar() {
     ${opening ? quick('toggle', 'fit', `Под мой проём ${opening.w}×${opening.h}`, f.fit, { fit: true }) : ''}
     ${DOOR_PURPOSES.map(([key, label]) => quick('purpose', key, label, f.purpose === key, { purpose: key })).join('')}
     ${quick('toggle', 'thermo', 'Терморазрыв', f.thermo, { thermo: true })}
+    ${quick('toggle', 'mirror', 'С зеркалом', f.mirror, { mirror: true })}
     ${quick('toggle', 'custom', 'Свой размер', f.custom, { custom: true })}`;
   return `<button class="chip main" data-open-filters aria-expanded="${state.filtersOpen}">${f.category === 'door' ? 'Фильтры' : 'Поиск'}${count ? ` · ${count}` : ''}</button>${doorChips}`;
 }
@@ -174,6 +176,7 @@ function renderCatalog() {
     <section class="hero slim">
       <h1>Двери, которые подходят</h1>
       <p class="lead">С&nbsp;установкой в&nbsp;СПб и&nbsp;ЛО. Оплата после монтажа, гарантия 1&nbsp;год.</p>
+      <a class="btn pick-btn" href="#/pick">Подобрать дверь за минуту</a>
     </section>
     <nav class="quick" aria-label="Полезное">
       <a class="pill hot" href="#/works">Кэшбэк до ${CASHBACK_MAX}</a>
@@ -211,6 +214,7 @@ function renderItem(id) {
       <h1>${esc(item.name)}</h1>
       <p class="muted">${esc(item.series)}</p>
       <div class="bigprice">${custom || !item.price ? 'Цена по запросу' : money(item.price)}</div>
+      ${isDoor && doorFacts(item).length ? `<ul class="facts-row">${doorFacts(item).map((fact) => `<li>${esc(fact)}</li>`).join('')}</ul>` : ''}
       ${isDoor ? `
         <span class="label">Размер, мм</span>
         <div class="opts">
@@ -232,12 +236,19 @@ function renderItem(id) {
       : `<p class="note">Подберём ручки и накладки по каталогу Morelli и пришлём цену. Опишите, что нужно.</p>
          <span class="label">Что нужно</span>
          <textarea data-custom="note" placeholder="Например: чёрная ручка и завёртка">${esc(draft.note)}</textarea>`}
-      <p class="error" id="item-error" role="alert" hidden></p>
-      <button class="btn" id="add" style="margin-top:16px">В корзину</button>
     </section>
+    ${itemReviews(item)}
     ${item.specs.length ? `<section class="panel"><h2>Характеристики</h2><dl class="specs">
       ${item.specs.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join('')}
-    </dl></section>` : ''}`;
+    </dl></section>` : ''}
+    <div class="buybar-space"></div>
+    <div class="buybar">
+      <p class="error" id="item-error" role="alert" hidden></p>
+      <div class="buybar-row">
+        <b>${custom || !item.price ? 'Цена по запросу' : money(item.price)}</b>
+        <button class="btn" id="add">В корзину</button>
+      </div>
+    </div>`;
 
   view.querySelectorAll('[data-size]').forEach((el) => el.addEventListener('click', () => {
     draft.size = el.dataset.size;
@@ -253,11 +264,26 @@ function renderItem(id) {
   view.querySelector('#add').addEventListener('click', () => addToCart(item, draft));
 }
 
+// Пара отзывов о похожей покупке: решение принимается здесь, а не на вкладке «Отзывы».
+function itemReviews(item) {
+  const { rating, reviews } = state.works;
+  if (!rating || !reviews?.length) return '';
+  const about = (word) => reviews.filter((r) => r.item.toLowerCase().includes(word));
+  const preferred = item.kind === 'hardware' ? about('ручк') : item.attrs.thermo ? about('терморазрыв') : [];
+  const doors = reviews.filter((r) => r.item.toLowerCase().includes('двер') && !r.item.toLowerCase().includes('ручк'));
+  const picked = [...new Set([...preferred, ...(item.kind === 'hardware' ? [] : doors)])].slice(0, 2);
+  return `<section class="panel">
+    <div class="strip-head"><h2><span class="star">★</span> ${rating.value}</h2><a href="#/works">${rating.count} отзыва на Авито</a></div>
+    ${picked.map(reviewCard).join('')}
+  </section>`;
+}
+
 function addToCart(item, draft) {
   const error = view.querySelector('#item-error');
   const fail = (message) => {
     error.textContent = message;
     error.hidden = false;
+    (view.querySelector('[data-side]') || view.querySelector('[data-custom]'))?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
   let line = { id: item.id, qty: 1, size: null, custom: false, side: null, note: draft.note.trim() || null };
   if (item.kind === 'door') {
@@ -766,6 +792,51 @@ function renderFaq() {
     <a class="btn ghost" href="${TELEGRAM_URL}" target="_blank" rel="noopener" style="margin-top:10px">Задать вопрос в Telegram</a>`;
 }
 
+function renderPick() {
+  const pick = state.pick ?? (state.pick = { step: 0 });
+  const items = state.catalog.items;
+  const countFor = (answers) => applyFilters(items, pickFilters({ ...pick, ...answers })).length;
+  const questions = [
+    { key: 'where', title: 'Куда нужна дверь?', options: [['flat', 'В квартиру'], ['house', 'В дом или на дачу']] },
+    ...(pick.where !== 'flat' ? [{ key: 'warm', title: 'Дом отапливается зимой?', hint: 'Для тёплого дома лучше дверь с терморазрывом: она меньше промерзает.', options: [['yes', 'Да, нужна тёплая дверь'], ['no', 'Нет, не важно']] }] : []),
+    { key: 'budget', title: 'На какой бюджет рассчитываете?', hint: 'Цена двери без монтажа и доставки.', options: [...PRICE_BANDS.map(([key, label]) => [key, label]), ['any', 'Пока не знаю']] },
+  ];
+  const step = Math.min(pick.step, questions.length - 1);
+  const question = questions[step];
+  view.innerHTML = `${step ? '<button type="button" class="back link" id="pick-back">← Назад</button>' : '<a class="back" href="#/">← Каталог</a>'}
+    <h1>Подбор двери</h1>
+    <div class="progress">${questions.map((_, i) => `<i class="${i <= step ? 'on' : ''}"></i>`).join('')}</div>
+    <p class="step-title">Вопрос ${step + 1} из ${questions.length}</p>
+    <section class="panel pane">
+      <h2>${esc(question.title)}</h2>
+      ${question.hint ? `<p class="muted" style="margin-top:6px">${esc(question.hint)}</p>` : ''}
+      <div class="pick-options">
+        ${question.options.map(([value, label]) => {
+          const left = countFor({ [question.key]: value });
+          return `<button type="button" class="pick-option" data-answer="${value}" ${left ? '' : 'disabled'}><span>${esc(label)}</span><small>${left ? `${left} мод.` : 'нет моделей'}</small></button>`;
+        }).join('')}
+      </div>
+    </section>`;
+  view.querySelector('#pick-back')?.addEventListener('click', () => {
+    pick.step = step - 1;
+    renderPick();
+  });
+  view.querySelectorAll('[data-answer]').forEach((button) => button.addEventListener('click', () => {
+    pick[question.key] = button.dataset.answer;
+    tg()?.HapticFeedback?.selectionChanged();
+    if (step < questions.length - 1) {
+      pick.step = step + 1;
+      renderPick();
+      window.scrollTo(0, 0);
+      return;
+    }
+    state.filters = pickFilters(pick);
+    state.filtersOpen = false;
+    state.pick = null;
+    location.hash = '#/';
+  }));
+}
+
 function renderServices() {
   view.innerHTML = `${topbar()}<h1>Монтаж и доставка</h1>
     <p class="muted" style="margin-top:6px">${SAVING_TEXT} <a href="#/measure">Инструкция</a></p>
@@ -789,10 +860,10 @@ function renderWorks() {
   view.innerHTML = `${topbar()}<h1>Отзывы и работы</h1>
     ${rating ? `<section class="panel score"><div class="bigprice">★ ${rating.value}</div>
       <div><p>${rating.count} отзыва на Авито</p><a href="${rating.url}" target="_blank" rel="noopener">Смотреть на Авито</a></div></section>` : ''}
+    ${cashbackBanner()}
     ${reviews.length ? `<section class="panel">${reviews.slice(0, shown).map(reviewCard).join('')}
       ${reviews.length > shown ? `<details class="more"><summary>Все отзывы</summary>${reviews.slice(shown).map(reviewCard).join('')}</details>` : ''}
       <p class="muted" style="margin-top:12px">Отзывы приведены дословно. Часть покупателей получила кэшбэк за отзыв с фотографией.</p></section>` : ''}
-    ${cashbackBanner()}
     <h2 style="margin-top:20px">Фото установленных дверей</h2>
     <div class="works">${photos.map((src, i) => `<button data-photo="${i}" aria-label="Открыть фото"><img src="${src}" alt="Установленная дверь" loading="lazy"></button>`).join('')}</div>
     <a class="btn" href="#/" style="margin-top:14px">Выбрать дверь</a>
@@ -831,6 +902,7 @@ function route() {
   else if (page === 'works') renderWorks();
   else if (page === 'services') renderServices();
   else if (page === 'faq') renderFaq();
+  else if (page === 'pick') renderPick();
   else if (page === 'custom') renderCustom();
   else if (page === 'wholesale') renderWholesale();
   else if (page === 'about') renderAbout();

@@ -1,4 +1,4 @@
-import { estimate, hasDoors, rangeText } from './pricing.js';
+import { estimate, hasDoors, rangeText } from './pricing.js?v=202611031323';
 
 // Заявка без сервера: собираем текст, клиент отправляет его сам в чат с продавцом.
 export const PAYMENTS = {

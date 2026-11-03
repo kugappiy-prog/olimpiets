@@ -200,6 +200,22 @@ button.link { padding: 14px 0 10px; border: 0; background: none; color: var(--li
 .faq details:first-child { border-top: 0; }
 .faq summary { padding: 13px 0; font-weight: 600; cursor: pointer; }
 .faq p { padding-bottom: 13px; font-size: 15px; color: var(--muted); }
+.buybar-space { height: 70px; }
+.buybar { position: fixed; left: 0; right: 0; bottom: calc(62px + var(--safe-bottom)); z-index: 3; padding: 8px 16px; background: var(--card); border-top: 1px solid var(--line); }
+.buybar .error { max-width: 608px; margin: 0 auto 6px; }
+.buybar-row { display: flex; align-items: center; gap: 12px; max-width: 608px; margin: 0 auto; }
+.buybar-row b { flex: 1; min-width: 0; font: 800 19px/1.15 var(--heading); letter-spacing: -0.02em; }
+.buybar-row .btn { flex: none; width: 56%; min-height: 48px; padding: 10px 14px; }
+.facts-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.facts-row li { padding: 5px 10px; border-radius: 10px; background: var(--soft); font-size: 13px; font-weight: 600; }
+.star { color: var(--orange); }
+.pick-btn { margin-top: 12px; min-height: 46px; padding: 10px 16px; }
+.pick-options { display: grid; gap: 8px; margin-top: 14px; }
+.pick-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 14px; background: transparent; color: var(--text); font: 600 16px/1.25 var(--body); text-align: left; cursor: pointer; }
+.pick-option:active { border-color: var(--brand); background: var(--soft); }
+.pick-option:disabled { opacity: .45; cursor: default; }
+.pick-option small { flex: none; color: var(--muted); font-size: 13px; font-weight: 400; }
+button.link.small { padding: 0 0 0 8px; font-size: 14px; font-weight: 600; text-decoration: underline; }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
 .tile { display: block; padding: 14px; border-radius: 18px; background: var(--card); color: var(--text); text-decoration: none; border-left: 4px solid var(--orange); }
 .tile p { margin-top: 4px; font-size: 13px; }
