@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 8 176 178" role="img" aria-label="Олимпиец">
+  <mask id="m"><rect width="200" height="200" fill="#fff"/><circle cx="84" cy="108" r="40" fill="#000"/><path d="M100 80C108 54 118 36 130 18L200 0V50L176 62C158 70 140 80 122 94Z" fill="#000"/></mask>
+  <path d="M18 178V92C18 56 46 28 82 28H150C162 28 170 40 170 52V120C170 152 144 178 112 178Z" fill="#087DB8" mask="url(#m)"/><circle cx="84" cy="108" r="18" fill="#087DB8"/><path d="M130 76C130 48 146 26 180 14C180 46 166 68 130 76Z" fill="#FF7A00"/>
+</svg>
