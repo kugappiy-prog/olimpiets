@@ -107,7 +107,9 @@ function matches(item, f, fits) {
 
 export function applyFilters(items, f, fits = () => true) {
   const direction = f.sort === 'expensive' ? -1 : 1;
-  return items.filter((item) => matches(item, f, fits)).sort((a, b) => direction * ((a.price ?? 0) - (b.price ?? 0)));
+  // Товары без фото всегда в конце, внутри каждой группы действует выбранная сортировка.
+  const noPhoto = (item) => (item.images?.length ? 0 : 1);
+  return items.filter((item) => matches(item, f, fits)).sort((a, b) => noPhoto(a) - noPhoto(b) || direction * ((a.price ?? 0) - (b.price ?? 0)));
 }
 
 // Сколько позиций останется, если выбрать значение: показываем рядом и выключаем нулевые варианты.
