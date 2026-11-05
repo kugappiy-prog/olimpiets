@@ -1,8 +1,20 @@
-import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611031323';
-import { doorsFit, measureFigures } from './measure.js?v=202611031323';
-import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611031323';
-import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611031323';
+import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611050913';
+import { doorsFit, measureFigures } from './measure.js?v=202611050913';
+import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611050913';
+import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611050913';
 
+// Адрес приёма заказов (Cloudflare Worker). Пока пусто, заявка уходит сообщением в чат.
+const API_URL = '';
+const SECTION_NAMES = {
+  ruchki: 'Ручки',
+  petli: 'Петли',
+  'zamki-i-zashchelki': 'Замки и защёлки',
+  'skobyanye-izdeliya': 'Скобяные изделия',
+  'razdvizhnye-sistemy': 'Раздвижные системы',
+  'umnye-sistemy-otkryvaniya': 'Умные системы',
+};
+const PAGE_SIZE = 40;
+const SIDE_KEYS = { 'Левая': 'L', 'Правая': 'R' };
 const CONTACT = { email: 'kugappiy@yandex.ru', telegram: 'jamesanji' };
 const TELEGRAM_URL = `https://t.me/${CONTACT.telegram}`;
 const SAVING_TEXT = `Замерьте проём сами по нашей инструкции и сэкономьте до ${MEASURE_SAVING.toLocaleString('ru-RU')} ₽ на замере.`;
@@ -20,7 +32,7 @@ const ICONS = {
 };
 const view = document.getElementById('view');
 const tabs = document.getElementById('tabs');
-const state = { catalog: null, works: { photos: [], reviews: [] }, filters: defaultFilters(), filtersOpen: false, forms: {}, checkoutStep: 0, draft: {}, order: null };
+const state = { catalog: null, works: { photos: [], reviews: [] }, filters: defaultFilters(), filtersOpen: false, stock: { items: {} }, limit: PAGE_SIZE, hardwareLoaded: false, forms: {}, checkoutStep: 0, draft: {}, order: null };
 
 function load(key, fallback) {
   try {
@@ -48,6 +60,39 @@ const money = (value) => `${value.toLocaleString('ru-RU')} ₽`;
 const sizeLabel = (size) => size.replace('x', '×');
 const tg = () => window.Telegram?.WebApp;
 const find = (id) => state.catalog.items.find((item) => item.id === id);
+const offersOf = (variant) => state.stock.items[variant?.slug]?.offers ?? {};
+const variantPrice = (variant, item) => state.stock.items[variant?.slug]?.price ?? variant?.price ?? item.price;
+
+// Цены и остатки обновляются отдельно от каталога, раз в сутки.
+function applyStock(items) {
+  for (const item of items) {
+    if (!item.variants?.length) continue;
+    const prices = item.variants.map((v) => variantPrice(v, item)).filter(Boolean);
+    if (prices.length) item.price = Math.min(...prices);
+    item.stockTotal = item.variants.reduce((sum, v) => sum + Object.values(offersOf(v)).reduce((a, b) => a + b, 0), 0);
+    item.stockKnown = item.variants.some((v) => state.stock.items[v.slug]);
+  }
+}
+
+function stockFor(variant, size, side) {
+  const offers = offersOf(variant);
+  const keys = Object.keys(offers).filter((key) => key.startsWith(size ?? ''));
+  if (!keys.length) return null;
+  const sideKey = SIDE_KEYS[side];
+  const chosen = sideKey ? keys.filter((key) => key.endsWith(`-${sideKey}`)) : keys;
+  return (chosen.length ? chosen : keys).reduce((sum, key) => sum + offers[key], 0);
+}
+
+async function ensureHardware() {
+  if (state.hardwareLoaded) return;
+  try {
+    const hardware = await fetch('hardware.json').then((r) => r.json());
+    state.catalog.items.push(...hardware.items);
+  } catch {
+    // Без файла раздел покажет пустой список: остальной каталог работает.
+  }
+  state.hardwareLoaded = true;
+}
 
 function setCart(next) {
   cart = next;
@@ -68,7 +113,7 @@ function renderTabs() {
 
 function topbar() {
   return `<header class="topbar">
-    <a class="brand" href="#/"><img src="logo.svg" alt="">ОЛИМПИЕЦ</a>
+    <a class="brand" href="#/"><img src="logo.svg" alt=""><span class="brand-text"><b>ОЛИМПИЕЦ</b><small>двери и фурнитура</small></span></a>
     <a class="call" href="${TELEGRAM_URL}" target="_blank" rel="noopener" aria-label="Написать в Telegram">Написать</a>
   </header>`;
 }
@@ -91,8 +136,9 @@ function productCard(item) {
     ? `<img src="${item.images[0]}" alt="" loading="lazy">`
     : '<span class="noimg">Фото уточняется</span>';
   const facts = item.kind === 'door' ? doorFacts(item).slice(0, 2).join(' · ') : '';
+  const stock = item.stockKnown ? `<div class="badge ${item.stockTotal > 0 ? 'in' : 'out'}">${item.stockTotal > 0 ? 'В наличии' : 'Под заказ'}</div>` : '';
   return `<a class="card" href="#/item/${item.id}">
-    <div class="photo">${image}</div>
+    <div class="photo">${image}${stock}</div>
     <div class="price">${item.price ? money(item.price) : 'Цена по запросу'}</div>
     <div class="title">${esc(item.name)}${duplicateNames().has(item.name) ? `, ${esc(item.sizes.map(sizeLabel).join(', '))}` : ''}</div>
     <div class="tags">${esc(facts || item.series)}</div>
@@ -104,13 +150,14 @@ const fitsOpening = (item) => Boolean(opening) && doorsFit(item.sizes, opening).
 function filterPanel() {
   const f = state.filters;
   const items = state.catalog.items;
-  const search = `<input id="search" type="search" placeholder="Поиск по названию" aria-label="Поиск по названию" value="${esc(f.q)}">`;
-  if (f.category !== 'door') return `<section class="panel filters">${search}</section>`;
+  const search = `<input id="search" type="search" placeholder="Поиск по названию или артикулу" aria-label="Поиск" value="${esc(f.q)}">`;
   const option = (attr, value, label, pressed, count) => `<button type="button" class="opt small" data-${attr}="${esc(value)}" aria-pressed="${pressed}" ${!pressed && count === 0 ? 'disabled' : ''}>${esc(label)}${count === undefined ? '' : ` <small>${count}</small>`}</button>`;
   const flip = (list, value) => (list.includes(value) ? list : [...list, value]);
   const count = (patch) => countWith(items, f, patch, fitsOpening);
-  return `<section class="panel filters">
-    ${search}
+  const sort = `<span class="label">Сортировка</span>
+    <div class="opts">${SORTS.map(([key, label]) => option('sort', key, label, f.sort === key)).join('')}</div>`;
+  if (f.category === 'hardware') return `<section class="panel filters">${search}${sort}</section>`;
+  const doorOnly = f.category !== 'door' ? '' : `
     <span class="label">Назначение</span>
     <div class="opts">${DOOR_PURPOSES.map(([key, label]) => option('purpose', key, label, f.purpose === key, count({ purpose: key }))).join('')}</div>
     <span class="label">Особенности</span>
@@ -118,26 +165,32 @@ function filterPanel() {
       ${option('toggle', 'thermo', 'Терморазрыв', f.thermo, count({ thermo: true }))}
       ${option('toggle', 'mirror', 'С зеркалом', f.mirror, count({ mirror: true }))}
       ${option('toggle', 'custom', 'Можно свой размер', f.custom, count({ custom: true }))}
-    </div>
+    </div>`;
+  return `<section class="panel filters">
+    ${search}
+    <span class="label">Наличие</span>
+    <div class="opts">${option('toggle', 'inStock', 'Есть на складе', f.inStock, count({ inStock: true }))}</div>
+    ${doorOnly}
     <span class="label">Цена</span>
     <div class="opts">${PRICE_BANDS.map(([key, label]) => option('band', key, label, f.band === key, count({ band: key }))).join('')}</div>
-    <span class="label">Серия</span>
-    <div class="opts">${seriesList(items).map((s) => option('series', s, s, f.series.includes(s), count({ series: flip(f.series, s) }))).join('')}</div>
+    <span class="label">${f.category === 'door' ? 'Серия' : 'Бренд'}</span>
+    <div class="opts">${seriesList(items, f.category).map((s) => option('series', s, s, f.series.includes(s), count({ series: flip(f.series, s) }))).join('')}</div>
     <span class="label">Ширина, мм</span>
-    <div class="opts">${widthList(items).map((w) => option('width', w, w, f.widths.includes(w), count({ widths: flip(f.widths, w) }))).join('')}</div>
-    <span class="label">Сортировка</span>
-    <div class="opts">${SORTS.map(([key, label]) => option('sort', key, label, f.sort === key)).join('')}</div>
+    <div class="opts">${widthList(items, f.category).map((w) => option('width', w, w, f.widths.includes(w), count({ widths: flip(f.widths, w) }))).join('')}</div>
+    ${sort}
     <button type="button" class="btn ghost" data-reset style="margin-top:14px">Сбросить фильтры</button>
   </section>`;
 }
 
 function catalogGrid() {
   const f = state.filters;
-  const items = applyFilters(state.catalog.items, f, fitsOpening);
-  const count = `<p class="muted found">Найдено: ${items.length}${activeCount(f) ? ' <button type="button" class="link small" data-reset>Сбросить</button>' : ''}</p>`;
-  if (!items.length) return `${count}<div class="empty"><p class="muted">Ничего не нашлось. Попробуйте смягчить фильтры.</p></div>`;
+  const all = applyFilters(state.catalog.items, f, fitsOpening);
+  const items = all.slice(0, state.limit);
+  const count = `<p class="muted found">Найдено: ${all.length}${activeCount(f) ? ' <button type="button" class="link small" data-reset>Сбросить</button>' : ''}</p>`;
+  if (!all.length) return `${count}<div class="empty"><p class="muted">Ничего не нашлось. Попробуйте смягчить фильтры.</p></div>`;
+  const more = all.length > items.length ? `<button type="button" class="btn ghost" data-more style="margin-top:12px">Показать ещё</button>` : '';
   // Промо между карточками: цены видны сразу, а доверие и кэшбэк не теряются внизу длинного списка.
-  if (activeCount(f) || items.length <= 6) return `${count}<div class="grid">${items.map(productCard).join('')}</div>`;
+  if (activeCount(f) || items.length <= 6 || f.category !== 'door') return `${count}<div class="grid">${items.map(productCard).join('')}</div>${more}`;
   return `${count}<div class="grid">${items.slice(0, 6).map(productCard).join('')}</div>
     ${cashbackBanner()}
     ${state.works.photos.length ? `<section class="strip">
@@ -145,27 +198,43 @@ function catalogGrid() {
       ${state.works.rating ? `<a class="stars" href="#/works"><b>★ ${state.works.rating.value}</b> ${state.works.rating.count} отзыва на Авито</a>` : ''}
       <div class="strip-row">${state.works.photos.slice(0, 8).map((src) => `<a href="#/works"><img src="${src}" alt="Установленная дверь" loading="lazy"></a>`).join('')}</div>
     </section>` : ''}
-    <div class="grid" style="margin-top:16px">${items.slice(6).map(productCard).join('')}</div>`;
+    <div class="grid" style="margin-top:16px">${items.slice(6).map(productCard).join('')}</div>${more}`;
 }
 
 function renderFilterBar() {
   const f = state.filters;
-  const count = activeCount(f);
   const items = state.catalog.items;
   const quick = (attr, value, label, pressed, patch) => {
     const left = countWith(items, f, patch, fitsOpening);
     return `<button class="chip" data-${attr}="${value}" aria-pressed="${pressed}" ${!pressed && left === 0 ? 'disabled' : ''}>${label}</button>`;
   };
-  const doorChips = f.category !== 'door' ? '' : `
+  if (f.category === 'hardware') {
+    return Object.entries(SECTION_NAMES).map(([key, label]) => quick('section', key, label, f.section === key, { section: key })).join('');
+  }
+  const stock = quick('toggle', 'inStock', 'В наличии', f.inStock, { inStock: true });
+  if (f.category !== 'door') return stock;
+  return `${stock}
     ${opening ? quick('toggle', 'fit', `Под мой проём ${opening.w}×${opening.h}`, f.fit, { fit: true }) : ''}
     ${DOOR_PURPOSES.map(([key, label]) => quick('purpose', key, label, f.purpose === key, { purpose: key })).join('')}
     ${quick('toggle', 'thermo', 'Терморазрыв', f.thermo, { thermo: true })}
     ${quick('toggle', 'mirror', 'С зеркалом', f.mirror, { mirror: true })}
     ${quick('toggle', 'custom', 'Свой размер', f.custom, { custom: true })}`;
-  return `<button class="chip main" data-open-filters aria-expanded="${state.filtersOpen}">${f.category === 'door' ? 'Фильтры' : 'Поиск'}${count ? ` · ${count}` : ''}</button>${doorChips}`;
+}
+
+function renderFilterButton() {
+  const f = state.filters;
+  const count = activeCount(f);
+  const label = f.category === 'hardware' ? 'Поиск и сортировка' : 'Фильтры и сортировка';
+  return `<button class="filter-btn" data-open-filters aria-expanded="${state.filtersOpen}">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+    <span>${label}</span>
+    ${count ? `<b>${count}</b>` : ''}
+    <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>`;
 }
 
 function refreshCatalog({ panel = false } = {}) {
+  view.querySelector('#filter-open').innerHTML = renderFilterButton();
   view.querySelector('#filter-bar').innerHTML = renderFilterBar();
   view.querySelector('#results').innerHTML = catalogGrid();
   if (panel) view.querySelector('#filter-panel').innerHTML = state.filtersOpen ? filterPanel() : '';
@@ -187,38 +256,72 @@ function renderCatalog() {
       <a class="pill" href="#/faq">Вопросы</a>
     </nav>
     <div class="segment" role="group" aria-label="Раздел каталога">
-      <button class="seg" data-category="door" aria-pressed="${state.filters.category === 'door'}">Двери</button>
-      <button class="seg" data-category="hardware" aria-pressed="${state.filters.category === 'hardware'}">Фурнитура</button>
+      ${[['door', 'Входные'], ['interior', 'Межкомнатные'], ['hardware', 'Фурнитура']].map(([key, label]) => `<button class="seg" data-category="${key}" aria-pressed="${state.filters.category === key}">${label}</button>`).join('')}
     </div>
+    <div id="filter-open"></div>
     <div class="chips" id="filter-bar" role="group" aria-label="Фильтры"></div>
     <div id="filter-panel"></div>
     <div id="results"></div>
-    <p class="foot">Цены на ${esc(state.catalog.priceDate)}. <a href="#/services">Цены на монтаж и доставку</a>. ${WARRANTY_TEXT} Предложение не является офертой.</p>`;
+    <p class="foot">Цены на ${esc(state.stock.updated?.split(' ')[0] ?? state.catalog.priceDate)}. <a href="#/services">Цены на монтаж и доставку</a>. ${WARRANTY_TEXT} Предложение не является офертой.</p>`;
   refreshCatalog({ panel: true });
+}
+
+function stockBadge(count) {
+  if (count === null) return '<p class="stock unknown">Наличие уточним при подтверждении</p>';
+  return count > 0 ? `<p class="stock in">На складе: ${count} шт.</p>` : '<p class="stock out">Под заказ</p>';
 }
 
 function renderItem(id) {
   const item = find(id);
   if (!item) {
+    if (id?.startsWith('m') && !state.hardwareLoaded) {
+      ensureHardware().then(() => renderItem(id));
+      return;
+    }
     view.innerHTML = `${topbar()}<div class="empty"><h2>Товар не найден</h2><p class="muted">Возможно, он больше не продаётся.</p><a href="#/">В каталог</a></div>`;
     return;
   }
-  const fits = opening && item.kind === 'door' ? doorsFit(item.sizes, opening) : [];
-  const draft = state.draft[id] ?? (state.draft[id] = { size: fits[0] || item.sizes[0] || null, side: null, customW: '', customH: '', note: '' });
   const isDoor = item.kind === 'door';
+  const isHardware = item.kind === 'hardware';
+  const variants = item.variants ?? [];
+  const fits = opening && !isHardware ? doorsFit(item.sizes, opening) : [];
+  const draft = state.draft[id] ?? (state.draft[id] = {
+    variant: (variants.find((v) => Object.values(offersOf(v)).some((q) => q > 0)) ?? variants[0])?.slug ?? null,
+    size: fits[0] || item.sizes[0] || null,
+    side: null,
+    customW: '',
+    customH: '',
+  });
+  const variant = variants.find((v) => v.slug === draft.variant) ?? null;
   const custom = draft.size === 'custom';
   const canCustom = item.attrs.nonstandard;
+  const hasSides = isDoor || Object.keys(offersOf(variant)).some((key) => /-[LR]$/.test(key));
+  const price = custom ? null : variantPrice(variant, item);
+  const images = variant?.images?.length ? variant.images : item.images;
+  const count = isHardware || custom ? null : stockFor(variant, draft.size, draft.side);
+  const sideLabel = (side) => {
+    const qty = variant ? stockFor(variant, draft.size, side) : null;
+    return qty === null ? '' : qty > 0 ? `<small>${qty} шт.</small>` : '<small>под заказ</small>';
+  };
+  const sizeCount = (size) => {
+    const qty = variant ? stockFor(variant, size) : null;
+    return qty === null ? '' : `<small>${qty > 0 ? `${qty} шт.` : 'под заказ'}</small>`;
+  };
   view.innerHTML = `<a class="back" href="#/">← Каталог</a>
-    <div class="gallery">${item.images.map((src) => `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`).join('') || ''}</div>
+    <div class="gallery">${images.map((src) => `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`).join('')}</div>
     <section class="panel">
       <h1>${esc(item.name)}</h1>
-      <p class="muted">${esc(item.series)}</p>
-      <div class="bigprice">${custom || !item.price ? 'Цена по запросу' : money(item.price)}</div>
+      <p class="muted">${esc(item.series)}${item.sku ? ` · Артикул ${esc(item.sku)}` : ''}</p>
+      <div class="bigprice">${price ? money(price) : 'Цена по запросу'}</div>
+      ${isHardware ? '' : stockBadge(count)}
       ${isDoor && doorFacts(item).length ? `<ul class="facts-row">${doorFacts(item).map((fact) => `<li>${esc(fact)}</li>`).join('')}</ul>` : ''}
-      ${isDoor ? `
+      ${variants.length > 1 ? `
+        <span class="label">Цвет: ${esc(variant?.color)}</span>
+        <div class="swatches">${variants.map((v) => `<button type="button" class="swatch" data-variant="${esc(v.slug)}" aria-pressed="${v.slug === draft.variant}" aria-label="${esc(v.color)}">${v.images[0] ? `<img src="${v.images[0]}" alt="" loading="lazy">` : esc(v.color)}</button>`).join('')}</div>` : variant?.color ? `<p class="muted" style="margin-top:10px">Цвет: ${esc(variant.color)}</p>` : ''}
+      ${isHardware ? '' : `
         <span class="label">Размер, мм</span>
         <div class="opts">
-          ${item.sizes.map((size) => `<button class="opt" data-size="${size}" aria-pressed="${draft.size === size}">${sizeLabel(size)}${fits.includes(size) ? ' ✓' : ''}</button>`).join('')}
+          ${item.sizes.map((size) => `<button class="opt" data-size="${size}" aria-pressed="${draft.size === size}">${sizeLabel(size)}${fits.includes(size) ? ' ✓' : ''} ${sizeCount(size)}</button>`).join('')}
           ${canCustom ? `<button class="opt" data-size="custom" aria-pressed="${custom}">Другой размер</button>` : ''}
         </div>
         ${custom ? `<div class="two" style="margin-top:10px">
@@ -226,16 +329,15 @@ function renderItem(id) {
           <input inputmode="numeric" placeholder="Высота, мм" aria-label="Высота двери, мм" data-custom="customH" value="${esc(draft.customH)}">
         </div>
         <p class="note">Заказная дверь: цену рассчитаем после заявки, предоплата 50–70%.</p>` : ''}
-        <span class="label">Сторона открывания</span>
+        ${hasSides ? `<span class="label">Сторона открывания</span>
         <div class="opts">
-          ${['Левая', 'Правая', 'Не знаю'].map((side) => `<button class="opt" data-side="${side}" aria-pressed="${draft.side === side}">${side}</button>`).join('')}
+          ${['Левая', 'Правая', 'Не знаю'].map((side) => `<button class="opt" data-side="${side}" aria-pressed="${draft.side === side}">${side} ${side === 'Не знаю' || custom ? '' : sideLabel(side)}</button>`).join('')}
         </div>
-        <p class="muted" style="margin-top:8px"><a href="#/measure">Как определить размер и сторону</a></p>
-        <p class="note">Монтаж этой двери: ${rangeText(PRICES[installKind(item, custom)])}. <a href="#/services">Все цены</a><br>${WARRANTY_TEXT}</p>
-        ${item.attrs.panels ? '<p class="muted" style="margin-top:8px">Панели можно заменить: напишите пожелание в комментарии к заявке.</p>' : ''}`
-      : `<p class="note">Подберём ручки и накладки по каталогу Morelli и пришлём цену. Опишите, что нужно.</p>
-         <span class="label">Что нужно</span>
-         <textarea data-custom="note" placeholder="Например: чёрная ручка и завёртка">${esc(draft.note)}</textarea>`}
+        <p class="muted" style="margin-top:8px"><a href="#/measure">Как определить размер и сторону</a></p>` : ''}
+        ${state.stock.updated ? `<p class="muted" style="margin-top:8px">Наличие на ${esc(state.stock.updated)}</p>` : ''}`}
+      ${isDoor ? `<p class="note">Монтаж этой двери: ${rangeText(PRICES[installKind(item, custom)])}. <a href="#/services">Все цены</a><br>${WARRANTY_TEXT}</p>
+        ${item.attrs.panels ? '<p class="muted" style="margin-top:8px">Панели можно заменить: напишите пожелание в комментарии к заявке.</p>' : ''}` : ''}
+      ${item.kind === 'interior' ? '<p class="note">Цена за полотно. Коробку, наличники и монтаж рассчитаем после заявки.</p>' : ''}
     </section>
     ${itemReviews(item)}
     ${item.specs.length ? `<section class="panel"><h2>Характеристики</h2><dl class="specs">
@@ -245,23 +347,31 @@ function renderItem(id) {
     <div class="buybar">
       <p class="error" id="item-error" role="alert" hidden></p>
       <div class="buybar-row">
-        <b>${custom || !item.price ? 'Цена по запросу' : money(item.price)}</b>
+        <b>${price ? money(price) : 'Цена по запросу'}</b>
         <button class="btn" id="add">В корзину</button>
       </div>
     </div>`;
-
+  const rerender = () => {
+    const y = window.scrollY;
+    renderItem(id);
+    window.scrollTo(0, y);
+  };
   view.querySelectorAll('[data-size]').forEach((el) => el.addEventListener('click', () => {
     draft.size = el.dataset.size;
-    renderItem(id);
+    rerender();
   }));
   view.querySelectorAll('[data-side]').forEach((el) => el.addEventListener('click', () => {
     draft.side = el.dataset.side;
-    view.querySelectorAll('[data-side]').forEach((b) => b.setAttribute('aria-pressed', b === el));
+    rerender();
+  }));
+  view.querySelectorAll('[data-variant]').forEach((el) => el.addEventListener('click', () => {
+    draft.variant = el.dataset.variant;
+    rerender();
   }));
   view.querySelectorAll('[data-custom]').forEach((el) => el.addEventListener('input', () => {
     draft[el.dataset.custom] = el.value;
   }));
-  view.querySelector('#add').addEventListener('click', () => addToCart(item, draft));
+  view.querySelector('#add').addEventListener('click', () => addToCart(item, draft, variant, hasSides));
 }
 
 // Пара отзывов о похожей покупке: решение принимается здесь, а не на вкладке «Отзывы».
@@ -278,17 +388,24 @@ function itemReviews(item) {
   </section>`;
 }
 
-function addToCart(item, draft) {
+function addToCart(item, draft, variant, hasSides) {
   const error = view.querySelector('#item-error');
   const fail = (message) => {
     error.textContent = message;
     error.hidden = false;
     (view.querySelector('[data-side]') || view.querySelector('[data-custom]'))?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   };
-  let line = { id: item.id, qty: 1, size: null, custom: false, side: null, note: draft.note.trim() || null };
-  if (item.kind === 'door') {
-    if (!draft.side) return fail('Выберите сторону открывания');
+  const line = { id: item.id, qty: 1, size: null, custom: false, side: null, note: null };
+  if (item.kind === 'hardware') {
+    line.sku = item.sku ?? null;
+    line.image = item.images[0] ?? null;
+    line.price = item.price;
+  } else {
+    if (hasSides && !draft.side) return fail('Выберите сторону открывания');
     line.side = draft.side;
+    line.variant = variant?.slug ?? null;
+    line.color = variant?.color ?? null;
+    line.image = variant?.images?.[0] ?? item.images[0] ?? null;
     if (draft.size === 'custom') {
       const w = parseInt(draft.customW, 10);
       const h = parseInt(draft.customH, 10);
@@ -297,11 +414,11 @@ function addToCart(item, draft) {
       line.custom = true;
     } else {
       line.size = draft.size;
+      line.price = variantPrice(variant, item);
+      line.stock = variant ? stockFor(variant, draft.size, draft.side) : null;
     }
-  } else if (!line.note) {
-    return fail('Опишите, какая фурнитура нужна');
   }
-  const same = cart.find((c) => c.id === line.id && c.size === line.size && c.side === line.side && c.note === line.note);
+  const same = cart.find((c) => c.id === line.id && c.variant === line.variant && c.size === line.size && c.side === line.side);
   setCart(same ? cart.map((c) => (c === same ? { ...c, qty: c.qty + 1 } : c)) : [...cart, line]);
   tg()?.HapticFeedback?.notificationOccurred('success');
   location.hash = '#/cart';
@@ -359,7 +476,7 @@ function renderMeasure() {
 }
 
 function cartTotal() {
-  return cart.reduce((sum, line) => sum + (line.custom ? 0 : find(line.id)?.price || 0) * line.qty, 0);
+  return cart.reduce((sum, line) => sum + (line.custom ? 0 : (line.price ?? find(line.id)?.price) || 0) * line.qty, 0);
 }
 
 function hasCustom() {
@@ -375,10 +492,11 @@ function renderCart() {
   }
   const lines = cart.map((line, index) => {
     const item = find(line.id);
-    const details = [line.size && sizeLabel(line.size) + (line.custom ? ' (заказной)' : ''), line.side].filter(Boolean).join(', ');
-    const price = line.custom || !item.price ? 'Цена по запросу' : money(item.price * line.qty);
+    const details = [line.color, line.size && sizeLabel(line.size) + (line.custom ? ' (заказной)' : ''), line.side, line.sku && `арт. ${line.sku}`].filter(Boolean).join(', ');
+    const linePrice = line.price ?? item.price;
+    const price = line.custom || !linePrice ? 'Цена по запросу' : money(linePrice * line.qty);
     return `<div class="line">
-      ${item.images[0] ? `<img src="${item.images[0]}" alt="">` : ''}
+      ${line.image ?? item.images[0] ? `<img src="${line.image ?? item.images[0]}" alt="">` : ''}
       <div class="info"><h3>${esc(item.name)}</h3>
         <p class="muted">${esc(details || line.note)}</p>
         <p><b>${price}</b></p>
@@ -525,8 +643,8 @@ function showStep(form, steps, index) {
   view.querySelector('.progress').setAttribute('aria-valuenow', state.checkoutStep + 1);
   view.querySelector('#step-title').textContent = `Шаг ${state.checkoutStep + 1} из ${steps.length}: ${STEP_TITLES[steps[state.checkoutStep]]}`;
   view.querySelector('#step-back').hidden = state.checkoutStep === 0;
-  view.querySelector('#step-next').textContent = last ? 'Продолжить в Telegram' : 'Далее';
-  view.querySelector('#send-hint').hidden = !last;
+  view.querySelector('#step-next').textContent = last ? (API_URL ? 'Оформить заказ' : 'Продолжить в Telegram') : 'Далее';
+  view.querySelector('#send-hint').hidden = !last || Boolean(API_URL);
   view.querySelector('#error').hidden = true;
   window.scrollTo(0, 0);
 }
@@ -559,6 +677,7 @@ function estimateHtml(sum) {
     <div class="total"><span>Всего</span><span>${rangeText(sum.total)}</span></div>
     ${sum.saving ? `<p class="saving">Замер по инструкции: экономия до ${money(sum.saving)}</p>` : ''}
     ${sum.kmUnknown ? `<p class="muted">Плюс ${rangeText(PRICES.perKm)} за км от КАД.</p>` : ''}
+    ${sum.interiorInstall ? '<p class="muted">Коробку, наличники и монтаж межкомнатных дверей рассчитаем после заявки.</p>' : ''}
     <p class="muted" style="margin-top:6px">${esc(FINAL_PRICE_TEXT)}</p>`;
 }
 
@@ -614,20 +733,60 @@ function submitOrder(form) {
     return;
   }
   error.hidden = true;
-  delete state.forms.checkout;
-  state.checkoutStep = 0;
-  save('contact', { name: order.name, phone: order.phone, address: order.address });
-  state.order = orderText(order, cart, find);
-  state.orderEstimate = estimateHtml(estimate(cart, order, find));
-  setCart([]);
-  tg()?.HapticFeedback?.notificationOccurred('success');
-  openChat(chatLink(CONTACT, state.order));
-  location.hash = '#/done';
+  const text = orderText(order, cart, find);
+  const first = cart[0];
+  const photo = first.image ?? find(first.id)?.images?.[0];
+  const estimateBlock = estimateHtml(estimate(cart, order, find));
+  sendToSeller(text, photo, form).then((sent) => {
+    if (sent === 'error') return;
+    save('contact', { name: order.name, phone: order.phone, address: order.address });
+    delete state.forms.checkout;
+    state.checkoutStep = 0;
+    state.order = text;
+    state.orderSent = sent === 'bot';
+    state.orderEstimate = estimateBlock;
+    setCart([]);
+    tg()?.HapticFeedback?.notificationOccurred('success');
+    location.hash = '#/done';
+  });
+}
+
+// Заказ уходит Якову через бота. Пока бот не подключён или недоступен, клиент отправляет текст сам.
+async function sendToSeller(text, photo, form) {
+  const initData = tg()?.initData;
+  if (API_URL && initData) {
+    const button = form.querySelector('button.btn:not(.ghost)');
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Отправляем…';
+    try {
+      const response = await fetch(`${API_URL}/order`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text, initData, photo: photo ? new URL(photo, location.href).href : null }),
+      });
+      if (response.ok) return 'bot';
+    } catch {
+      // Ниже запасной путь через чат.
+    }
+    button.disabled = false;
+    button.textContent = label;
+  }
+  openChat(chatLink(CONTACT, text));
+  return 'chat';
 }
 
 function renderDone() {
   if (!state.order) {
     location.hash = '#/';
+    return;
+  }
+  if (state.orderSent) {
+    view.innerHTML = `${topbar()}<section class="panel stack"><h1>Заказ принят</h1>
+      <p>Спасибо! Мы получили заказ и свяжемся с вами, чтобы подтвердить цену, замер и монтаж.</p>
+      ${state.orderEstimate ? `<div class="estimate">${state.orderEstimate}</div>` : ''}
+      ${cashbackBanner()}
+      <a class="btn" href="#/">Вернуться в каталог</a></section>`;
     return;
   }
   view.innerHTML = `${topbar()}<section class="panel stack"><h1>Осталось отправить</h1>
@@ -657,8 +816,8 @@ function contactFields() {
 
 const requestFooter = `<label class="check"><input type="checkbox" name="consent"><span>Согласен на обработку персональных данных по <a href="#/privacy">политике</a></span></label>
   <p class="error" id="error" role="alert" hidden></p>
-  <button class="btn" style="margin-top:16px">Продолжить в Telegram</button>
-  <p class="muted" style="margin-top:8px">Откроется чат с готовым сообщением, останется нажать «Отправить».</p>`;
+  <button class="btn" style="margin-top:16px">${API_URL ? 'Отправить заявку' : 'Продолжить в Telegram'}</button>
+  ${API_URL ? '' : '<p class="muted" style="margin-top:8px">Откроется чат с готовым сообщением, останется нажать «Отправить».</p>'}`;
 
 function bindRequest(kind, groups) {
   const form = view.querySelector('#request');
@@ -681,12 +840,15 @@ function bindRequest(kind, groups) {
     error.hidden = !problem;
     if (problem) return;
     save('contact', { ...load('contact', {}), name: data.name, phone: data.phone });
-    state.order = requestText(kind, answers);
-    delete state.forms[kind];
-    state.orderEstimate = '';
-    tg()?.HapticFeedback?.notificationOccurred('success');
-    openChat(chatLink(CONTACT, state.order));
-    location.hash = '#/done';
+    const text = requestText(kind, answers);
+    sendToSeller(text, null, form).then((sent) => {
+      delete state.forms[kind];
+      state.order = text;
+      state.orderSent = sent === 'bot';
+      state.orderEstimate = '';
+      tg()?.HapticFeedback?.notificationOccurred('success');
+      location.hash = '#/done';
+    });
   });
 }
 
@@ -921,7 +1083,7 @@ function route() {
 
 view.addEventListener('click', (event) => {
   const f = state.filters;
-  const target = event.target.closest('[data-toggle],[data-open-filters],[data-category],[data-purpose],[data-band],[data-series],[data-width],[data-sort],[data-reset]');
+  const target = event.target.closest('[data-toggle],[data-open-filters],[data-category],[data-purpose],[data-section],[data-band],[data-series],[data-width],[data-sort],[data-reset],[data-more]');
   if (!target || target.disabled) return;
   const flip = (list, value) => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   if ('openFilters' in target.dataset) {
@@ -929,10 +1091,22 @@ view.addEventListener('click', (event) => {
     refreshCatalog({ panel: true });
     return;
   }
+  if ('more' in target.dataset) {
+    state.limit += PAGE_SIZE;
+    refreshCatalog();
+    return;
+  }
+  state.limit = PAGE_SIZE;
   if (target.dataset.category) {
     state.filters = { ...defaultFilters(), category: target.dataset.category };
     view.querySelectorAll('[data-category]').forEach((b) => b.setAttribute('aria-pressed', b === target));
-  } else if ('reset' in target.dataset) state.filters = defaultFilters();
+    if (target.dataset.category === 'hardware' && !state.hardwareLoaded) {
+      view.querySelector('#results').innerHTML = '<p class="muted found">Загружаем фурнитуру…</p>';
+      ensureHardware().then(() => refreshCatalog({ panel: true }));
+      return;
+    }
+  } else if ('reset' in target.dataset) state.filters = { ...defaultFilters(), category: f.category };
+  else if (target.dataset.section) f.section = f.section === target.dataset.section ? null : target.dataset.section;
   else if (target.dataset.purpose) f.purpose = f.purpose === target.dataset.purpose ? null : target.dataset.purpose;
   else if (target.dataset.toggle) f[target.dataset.toggle] = !f[target.dataset.toggle];
   else if (target.dataset.band) f.band = f.band === target.dataset.band ? null : target.dataset.band;
@@ -946,7 +1120,9 @@ view.addEventListener('click', (event) => {
 view.addEventListener('input', (event) => {
   if (event.target.id !== 'search') return;
   state.filters.q = event.target.value;
+  state.limit = PAGE_SIZE;
   // Панель не перерисовываем, чтобы поле поиска не теряло фокус.
+  view.querySelector('#filter-open').innerHTML = renderFilterButton();
   view.querySelector('#filter-bar').innerHTML = renderFilterBar();
   view.querySelector('#results').innerHTML = catalogGrid();
 });
@@ -983,12 +1159,16 @@ function connectTelegram() {
 
 async function start() {
   try {
-    const [catalog, works] = await Promise.all([
+    const [catalog, works, stock] = await Promise.all([
       fetch('catalog.json').then((r) => r.json()),
       fetch('works.json').then((r) => r.json()).catch(() => state.works),
+      fetch('stock.json', { cache: 'no-cache' }).then((r) => r.json()).catch(() => state.stock),
     ]);
     state.catalog = catalog;
     state.works = works;
+    state.stock = stock;
+    applyStock(state.catalog.items);
+    if (cart.some((line) => line.sku)) await ensureHardware();
   } catch {
     view.innerHTML = `<div class="empty"><h2>Каталог не загрузился</h2>
       <p class="muted" style="margin:8px 0">Проверьте интернет или напишите нам: ${CONTACT.email}</p></div>`;

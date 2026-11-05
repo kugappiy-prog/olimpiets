@@ -20,21 +20,21 @@ export const SORTS = [
 ];
 
 export function defaultFilters() {
-  return { category: 'door', q: '', purpose: null, thermo: false, mirror: false, custom: false, band: null, series: [], widths: [], fit: false, sort: 'cheap' };
+  return { category: 'door', q: '', purpose: null, thermo: false, mirror: false, custom: false, inStock: false, section: null, band: null, series: [], widths: [], fit: false, sort: 'cheap' };
 }
 
 export function activeCount(f) {
-  return [f.q.trim(), f.purpose, f.thermo, f.mirror, f.custom, f.band, f.series.length, f.widths.length, f.fit].filter(Boolean).length;
+  return [f.q.trim(), f.purpose, f.thermo, f.mirror, f.custom, f.inStock, f.section, f.band, f.series.length, f.widths.length, f.fit].filter(Boolean).length;
 }
 
 const widthOf = (size) => size.split('x')[0];
 
-export function seriesList(items) {
-  return [...new Set(items.filter((i) => i.kind === 'door').map((i) => i.series))];
+export function seriesList(items, kind = 'door') {
+  return [...new Set(items.filter((i) => i.kind === kind).map((i) => i.series))];
 }
 
-export function widthList(items) {
-  const widths = new Set(items.filter((i) => i.kind === 'door').flatMap((i) => i.sizes.map(widthOf)));
+export function widthList(items, kind = 'door') {
+  const widths = new Set(items.filter((i) => i.kind === kind).flatMap((i) => i.sizes.map(widthOf)));
   return [...widths].sort((a, b) => Number(a) - Number(b));
 }
 
@@ -87,12 +87,14 @@ export function pickFilters({ where, warm, budget }) {
 function matches(item, f, fits) {
   if (item.kind !== f.category) return false;
   const q = f.q.trim().toLowerCase();
-  if (q && !`${item.name} ${item.series}`.toLowerCase().includes(q)) return false;
-  if (f.category !== 'door') return true;
+  if (q && !`${item.name} ${item.series} ${item.sku ?? ''}`.toLowerCase().includes(q)) return false;
+  if (f.category === 'hardware') return !f.section || item.section === f.section;
   const band = PRICE_BANDS.find(([key]) => key === f.band);
   if (band && !(item.price > band[2] && item.price <= band[3])) return false;
   if (f.series.length && !f.series.includes(item.series)) return false;
   if (f.widths.length && !item.sizes.some((size) => f.widths.includes(widthOf(size)))) return false;
+  if (f.inStock && !(item.stockTotal > 0)) return false;
+  if (f.category !== 'door') return true;
   // Термодвери рассчитаны на улицу и дом, в квартиру их обычно не берут.
   if (f.purpose === 'flat' && item.attrs.thermo) return false;
   if (f.purpose === 'street' && !item.attrs.street) return false;

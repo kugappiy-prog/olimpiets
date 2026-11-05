@@ -56,8 +56,9 @@ export function installKind(item, custom = false) {
   return 'installStandard';
 }
 
+// Для межкомнатных тоже нужны адрес, этаж и замер; для фурнитуры нет.
 export function hasDoors(lines, findItem) {
-  return lines.some((line) => findItem(line.id).kind === 'door');
+  return lines.some((line) => findItem(line.id).kind !== 'hardware');
 }
 
 export function estimate(lines, answers, findItem) {
@@ -68,16 +69,21 @@ export function estimate(lines, answers, findItem) {
   let goods = 0;
   let unpriced = false;
   let doors = 0;
+  let interiorInstall = false;
   const installs = {};
   for (const line of lines) {
     const item = findItem(line.id);
-    const price = line.custom ? null : item.price;
+    const price = line.custom ? null : (line.price ?? item.price);
     if (price) goods += price * line.qty;
     else unpriced = true;
     if (item.kind === 'door') {
       doors += line.qty;
       const kind = installKind(item, line.custom);
       installs[kind] = (installs[kind] || 0) + line.qty;
+    } else if (item.kind === 'interior') {
+      // Цен на монтаж межкомнатных в прайсе услуг нет: не придумываем, считаем вручную.
+      doors += line.qty;
+      interiorInstall = true;
     }
   }
 
@@ -107,6 +113,7 @@ export function estimate(lines, answers, findItem) {
     total: [goods + services[0], goods + services[1]],
     unpriced,
     kmUnknown: Boolean(doors && outside && !km),
+    interiorInstall,
     saving: doors && !needMeasure ? MEASURE_SAVING : 0,
   };
 }

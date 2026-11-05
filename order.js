@@ -1,4 +1,4 @@
-import { estimate, hasDoors, rangeText } from './pricing.js?v=202611031323';
+import { estimate, hasDoors, rangeText } from './pricing.js?v=202611050913';
 
 // Заявка без сервера: собираем текст, клиент отправляет его сам в чат с продавцом.
 export const PAYMENTS = {
@@ -61,39 +61,37 @@ export function validateOrder(form, lines, findItem) {
   return null;
 }
 
+function lineText(line, item) {
+  const price = line.custom ? null : (line.price ?? item.price);
+  const head = [`• ${item.name}`, line.color, line.size && `${line.size.replace('x', '×')}${line.custom ? ' (заказной)' : ''}`, line.side?.toLowerCase()].filter(Boolean).join(', ');
+  const rows = [`${head}, ${line.qty} шт.: ${price ? money(price * line.qty) : 'цена по запросу'}`];
+  if (line.stock !== undefined && line.stock !== null) rows.push(`  ${line.stock > 0 ? `На складе: ${line.stock} шт.` : 'Под заказ'}`);
+  if (line.sku) rows.push(`  Артикул: ${line.sku}`);
+  if (line.note) rows.push(`  ${clean(line.note, 200)}`);
+  return rows;
+}
+
 export function orderText(form, lines, findItem) {
-  const out = ['Здравствуйте! Заявка из приложения ОЛИМПИЕЦ:', ''];
-  for (const line of lines) {
-    const item = findItem(line.id);
-    const price = line.custom ? null : item.price;
-    const size = line.size ? `, ${line.size.replace('x', '×')}${line.custom ? ' (заказной)' : ''}` : '';
-    const side = line.side ? `, ${line.side.toLowerCase()}` : '';
-    out.push(`• ${item.name}${size}${side}, ${line.qty} шт.: ${price ? money(price * line.qty) : 'цена по запросу'}`);
-    if (line.note) out.push(`  ${clean(line.note, 200)}`);
-  }
+  const doors = hasDoors(lines, findItem);
   const sum = estimate(lines, form, findItem);
-  out.push('', `Итого за товар: ${money(sum.goods)}${sum.unpriced ? ' + позиции по запросу' : ''}`);
-  if (hasDoors(lines, findItem)) {
-    out.push(`Монтаж и услуги примерно: ${rangeText(sum.services)}${sum.kmUnknown ? ' + км за КАД' : ''}`);
+  const out = ['🚪 НОВЫЙ ЗАКАЗ', '', 'ТОВАР'];
+  for (const line of lines) out.push(...lineText(line, findItem(line.id)));
+  out.push('', 'СУММА', `Товар: ${money(sum.goods)}${sum.unpriced ? ' + позиции по запросу' : ''}`);
+  if (doors) {
+    out.push(`Монтаж и услуги: ${rangeText(sum.services)}${sum.kmUnknown ? ' + км за КАД' : ''}${sum.interiorInstall ? ' + монтаж межкомнатных вручную' : ''}`);
     out.push(`Всего примерно: ${rangeText(sum.total)}`);
   }
-  out.push('', `Имя: ${clean(form.name, 80)}`);
-  out.push(`Телефон: ${normalizePhone(form.phone)}`);
-  out.push(`Адрес: ${clean(form.address, 200)}`);
-  if (hasDoors(lines, findItem)) {
+  out.push('', 'КЛИЕНТ', `Имя: ${clean(form.name, 80)}`, `Телефон: ${normalizePhone(form.phone)}`, `Адрес: ${clean(form.address, 200)}`);
+  if (doors) {
     const km = form.zone === 'out' && Number.parseInt(form.km, 10) > 0 ? `, ${Number.parseInt(form.km, 10)} км` : '';
-    out.push(`Район: ${ZONES[form.zone]}${km}`);
     const floor = form.lift === 'house' ? '' : `, этаж ${Number.parseInt(form.floor, 10)}`;
-    out.push(`Лифт: ${LIFTS[form.lift]}${floor}`);
     const disposal = form.old !== 'no' && form.disposal ? ', с утилизацией' : '';
-    out.push(`Старая дверь: ${OLD_DOORS[form.old]}${disposal}`);
-    out.push(`Монтаж: ${form.when}`);
-    out.push(`Замер: ${form.measured}`);
+    out.push('', 'МОНТАЖ', `Район: ${ZONES[form.zone]}${km}`, `Лифт: ${LIFTS[form.lift]}${floor}`, `Старая дверь: ${OLD_DOORS[form.old]}${disposal}`, `Когда: ${form.when}`, `Замер: ${form.measured}`);
+    if (form.opening) out.push(`Проём: ${form.opening}`);
   }
-  if (form.opening) out.push(`Проём: ${form.opening}`);
-  out.push(`Оплата: ${PAYMENTS[form.payment]}`);
-  if (clean(form.comment, 300)) out.push(`Комментарий: ${clean(form.comment, 300)}`);
-  if (form.source) out.push(`Источник: ${clean(form.source, 64)}`);
+  out.push('', 'ОПЛАТА', PAYMENTS[form.payment]);
+  if (clean(form.comment, 300)) out.push('', 'КОММЕНТАРИЙ', clean(form.comment, 300));
+  if (form.source) out.push('', `Источник: ${clean(form.source, 64)}`);
   return out.join('\n');
 }
 
@@ -121,7 +119,7 @@ export function validateRequest(kind, form) {
 }
 
 export function requestText(kind, form) {
-  const out = [kind === 'custom' ? 'Здравствуйте! Заявка на дверь на заказ:' : 'Здравствуйте! Оптовый запрос:', ''];
+  const out = [kind === 'custom' ? '🛠 ЗАЯВКА НА ДВЕРЬ НА ЗАКАЗ' : '📦 ОПТОВЫЙ ЗАПРОС', ''];
   if (kind === 'custom') {
     out.push(`Куда: ${form.purpose}`);
     out.push(`Размер: ${Number.parseInt(form.width, 10)}×${Number.parseInt(form.height, 10)} мм`);
