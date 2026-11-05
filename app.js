@@ -1,7 +1,7 @@
-import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051333';
-import { doorsFit, measureFigures } from './measure.js?v=202611051333';
-import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051333';
-import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051333';
+import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051340';
+import { doorsFit, measureFigures } from './measure.js?v=202611051340';
+import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051340';
+import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051340';
 
 // Адрес приёма заказов (Cloudflare Worker). Пока пусто, заявка уходит сообщением в чат.
 const API_URL = '';
@@ -131,17 +131,25 @@ function duplicateNames() {
   return state.duplicates;
 }
 
+// Превью лежит рядом с полным фото в папке t. Двери с двумя фото показываем сразу с обеих сторон.
+const thumb = (src) => src.replace(/([^/]+)$/, 't/$1');
+const SIDES = ['Снаружи', 'Внутри'];
+const isTwoSided = (item, images) => item.kind === 'door' && images.length >= 2;
+
 function productCard(item) {
-  const image = item.images[0]
-    ? `<img src="${item.images[0]}" alt="" loading="lazy">`
-    : '<span class="noimg">Фото уточняется</span>';
+  const image = isTwoSided(item, item.images)
+    ? `<div class="duo">${SIDES.map((side, i) => `<figure><img src="${thumb(item.images[i])}" alt="${side}" loading="lazy"><figcaption>${side}</figcaption></figure>`).join('')}</div>`
+    : item.images[0]
+      ? `<img src="${thumb(item.images[0])}" alt="" loading="lazy">`
+      : '<span class="noimg">Фото уточняется</span>';
   const facts = item.kind === 'door' ? doorFacts(item).slice(0, 2).join(' · ') : '';
   const stock = item.stockKnown ? `<div class="badge ${item.stockTotal > 0 ? 'in' : 'out'}">${item.stockTotal > 0 ? 'В наличии' : 'Под заказ'}</div>` : '';
   return `<a class="card" href="#/item/${item.id}">
-    <div class="photo">${image}${stock}</div>
+    <div class="photo">${image}</div>
     <div class="price">${item.price ? money(item.price) : 'Цена по запросу'}</div>
     <div class="title">${esc(item.name)}${duplicateNames().has(item.name) ? `, ${esc(item.sizes.map(sizeLabel).join(', '))}` : ''}</div>
     <div class="tags">${esc(facts || item.series)}</div>
+    ${stock}
   </a>`;
 }
 
@@ -308,7 +316,9 @@ function renderItem(id) {
     return qty === null ? '' : `<small>${qty > 0 ? `${qty} шт.` : 'под заказ'}</small>`;
   };
   view.innerHTML = `<a class="back" href="#/">← Каталог</a>
-    <div class="gallery">${images.map((src) => `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`).join('')}</div>
+    ${isTwoSided(item, images)
+    ? `<div class="sides">${SIDES.map((side, i) => `<figure><img src="${images[i]}" alt="${esc(item.name)}, ${side.toLowerCase()}"><figcaption>${side}</figcaption></figure>`).join('')}</div>`
+    : `<div class="gallery">${images.map((src) => `<img src="${src}" alt="${esc(item.name)}" loading="lazy">`).join('')}</div>`}
     <section class="panel">
       <h1>${esc(item.name)}</h1>
       <p class="muted">${esc(item.series)}${item.sku ? ` · Артикул ${esc(item.sku)}` : ''}</p>
