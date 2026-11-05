@@ -1,7 +1,7 @@
-import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051216';
-import { doorsFit, measureFigures } from './measure.js?v=202611051216';
-import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051216';
-import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051216';
+import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051319';
+import { doorsFit, measureFigures } from './measure.js?v=202611051319';
+import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051319';
+import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051319';
 
 // Адрес приёма заказов (Cloudflare Worker). Пока пусто, заявка уходит сообщением в чат.
 const API_URL = '';
