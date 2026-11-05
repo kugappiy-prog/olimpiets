@@ -1,7 +1,7 @@
-import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051340';
-import { doorsFit, measureFigures } from './measure.js?v=202611051340';
-import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051340';
-import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051340';
+import { PRICE_BANDS, PURPOSES as DOOR_PURPOSES, SORTS, activeCount, applyFilters, countWith, defaultFilters, doorFacts, pickFilters, seriesList, widthList } from './filters.js?v=202611051435';
+import { doorsFit, measureFigures } from './measure.js?v=202611051435';
+import { CLIENT_TYPES, LIFTS, OLD_DOORS, PAYMENTS, PURPOSES, STEP_TITLES, TIMINGS, ZONES, chatLink, orderSteps, orderText, requestText, stepProblem, validateOrder, validateRequest } from './order.js?v=202611051435';
+import { MEASURE_NEEDED, MEASURE_SAVING, MEASURE_SELF, PRICE_LIST, PRICES, estimate, hasDoors, installKind, rangeText } from './pricing.js?v=202611051435';
 
 // Адрес приёма заказов (Cloudflare Worker). Пока пусто, заявка уходит сообщением в чат.
 const API_URL = '';
@@ -17,6 +17,7 @@ const PAGE_SIZE = 40;
 const SIDE_KEYS = { 'Левая': 'L', 'Правая': 'R' };
 const CONTACT = { email: 'kugappiy@yandex.ru', telegram: 'jamesanji' };
 const TELEGRAM_URL = `https://t.me/${CONTACT.telegram}`;
+const PDF_URL = new URL('OLIMPIETS-catalog.pdf', location.href).href;
 const SAVING_TEXT = `Замерьте проём сами по нашей инструкции и сэкономьте до ${MEASURE_SAVING.toLocaleString('ru-RU')} ₽ на замере.`;
 const WARRANTY_TEXT = 'Гарантия 1 год согласно паспорту двери. Паспорт прилагается к каждой двери.';
 const CASHBACK_MAX = '5 000 ₽';
@@ -257,6 +258,7 @@ function renderCatalog() {
     </section>
     <nav class="quick" aria-label="Полезное">
       <a class="pill hot" href="#/works">Кэшбэк до ${CASHBACK_MAX}</a>
+      <a class="pill" href="${PDF_URL}" target="_blank" rel="noopener" download>Скачать каталог PDF</a>
       <a class="pill" href="#/measure">Свой замер: −${MEASURE_SAVING.toLocaleString('ru-RU')} ₽</a>
       <a class="pill" href="#/custom">На заказ</a>
       <a class="pill" href="#/wholesale">Оптом</a>
@@ -934,6 +936,7 @@ function renderAbout() {
       <div><b>Гарантия 1 год</b><span>согласно паспорту двери</span></div>
       <div><b>Паспорт</b><span>прилагается к каждой двери</span></div>
     </section>
+    <a class="btn ghost" href="${PDF_URL}" target="_blank" rel="noopener" download>Скачать каталог PDF</a>
     <section class="panel"><h3>В каталоге</h3><p class="muted" style="margin-top:4px">YoDoors, Уральские двери, Райтвер, BIST, ELARTUM, фурнитура Morelli</p></section>
     <a class="btn" href="${TELEGRAM_URL}" target="_blank" rel="noopener" style="margin-top:12px">Написать в Telegram</a>
     <p class="muted" style="margin-top:12px">Почта: <b>${CONTACT.email}</b></p>
@@ -1163,6 +1166,8 @@ function connectTelegram() {
   app.onEvent?.('themeChanged', paintChrome);
   app.ready();
   app.expand();
+  // На телефоне без полосы Telegram сверху. На компьютере оставляем обычное окно.
+  if (app.isVersionAtLeast?.('8.0') && ['ios', 'android'].includes(app.platform)) app.requestFullscreen?.();
   app.BackButton?.onClick(() => history.back());
   route();
 }

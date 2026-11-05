@@ -1,4 +1,4 @@
-import { estimate, hasDoors, rangeText } from './pricing.js?v=202611051340';
+import { estimate, hasDoors, rangeText } from './pricing.js?v=202611051435';
 
 // Заявка без сервера: собираем текст, клиент отправляет его сам в чат с продавцом.
 export const PAYMENTS = {
@@ -74,23 +74,23 @@ function lineText(line, item) {
 export function orderText(form, lines, findItem) {
   const doors = hasDoors(lines, findItem);
   const sum = estimate(lines, form, findItem);
-  const out = ['🚪 НОВЫЙ ЗАКАЗ', '', 'ТОВАР'];
+  const out = ['Здравствуйте! Я выбрал продукт с вашего сайта.', '', 'Выбранный продукт:'];
   for (const line of lines) out.push(...lineText(line, findItem(line.id)));
-  out.push('', 'СУММА', `Товар: ${money(sum.goods)}${sum.unpriced ? ' + позиции по запросу' : ''}`);
+  out.push('', 'Сумма:', `Товар: ${money(sum.goods)}${sum.unpriced ? ' + позиции по запросу' : ''}`);
   if (doors) {
     out.push(`Монтаж и услуги: ${rangeText(sum.services)}${sum.kmUnknown ? ' + км за КАД' : ''}${sum.interiorInstall ? ' + монтаж межкомнатных вручную' : ''}`);
     out.push(`Всего примерно: ${rangeText(sum.total)}`);
   }
-  out.push('', 'КЛИЕНТ', `Имя: ${clean(form.name, 80)}`, `Телефон: ${normalizePhone(form.phone)}`, `Адрес: ${clean(form.address, 200)}`);
+  out.push('', 'Мои данные:', `Имя: ${clean(form.name, 80)}`, `Телефон: ${normalizePhone(form.phone)}`, `Адрес: ${clean(form.address, 200)}`);
   if (doors) {
     const km = form.zone === 'out' && Number.parseInt(form.km, 10) > 0 ? `, ${Number.parseInt(form.km, 10)} км` : '';
     const floor = form.lift === 'house' ? '' : `, этаж ${Number.parseInt(form.floor, 10)}`;
     const disposal = form.old !== 'no' && form.disposal ? ', с утилизацией' : '';
-    out.push('', 'МОНТАЖ', `Район: ${ZONES[form.zone]}${km}`, `Лифт: ${LIFTS[form.lift]}${floor}`, `Старая дверь: ${OLD_DOORS[form.old]}${disposal}`, `Когда: ${form.when}`, `Замер: ${form.measured}`);
+    out.push('', 'Монтаж:', `Район: ${ZONES[form.zone]}${km}`, `Лифт: ${LIFTS[form.lift]}${floor}`, `Старая дверь: ${OLD_DOORS[form.old]}${disposal}`, `Когда: ${form.when}`, `Замер: ${form.measured}`);
     if (form.opening) out.push(`Проём: ${form.opening}`);
   }
-  out.push('', 'ОПЛАТА', PAYMENTS[form.payment]);
-  if (clean(form.comment, 300)) out.push('', 'КОММЕНТАРИЙ', clean(form.comment, 300));
+  out.push('', `Оплата: ${PAYMENTS[form.payment]}`);
+  if (clean(form.comment, 300)) out.push('', `Комментарий: ${clean(form.comment, 300)}`);
   if (form.source) out.push('', `Источник: ${clean(form.source, 64)}`);
   return out.join('\n');
 }
@@ -119,7 +119,7 @@ export function validateRequest(kind, form) {
 }
 
 export function requestText(kind, form) {
-  const out = [kind === 'custom' ? '🛠 ЗАЯВКА НА ДВЕРЬ НА ЗАКАЗ' : '📦 ОПТОВЫЙ ЗАПРОС', ''];
+  const out = [kind === 'custom' ? 'Здравствуйте! Нужна дверь на заказ.' : 'Здравствуйте! Интересует оптовая закупка дверей.', ''];
   if (kind === 'custom') {
     out.push(`Куда: ${form.purpose}`);
     out.push(`Размер: ${Number.parseInt(form.width, 10)}×${Number.parseInt(form.height, 10)} мм`);

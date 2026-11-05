@@ -29,6 +29,8 @@
   --heading: 'Geologica', -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif;
   --body: -apple-system, BlinkMacSystemFont, Inter, system-ui, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Telegram задаёт эти значения в полноэкранном режиме: там его кнопки лежат поверх страницы. */
+  --safe-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -56,7 +58,7 @@ body::before {
     radial-gradient(210px 210px at 96% 62%, rgba(8, 125, 184, .15), transparent 70%),
     radial-gradient(170px 170px at 10% 88%, rgba(8, 125, 184, .18), transparent 70%);
 }
-main { max-width: 640px; margin: 0 auto; padding: 0 16px calc(112px + var(--safe-bottom)); }
+main { max-width: 640px; margin: 0 auto; padding: var(--safe-top) 16px calc(112px + var(--safe-bottom)); }
 img { display: block; max-width: 100%; }
 a { color: var(--link); }
 h1, h2, h3 { font-family: var(--heading); margin: 0; letter-spacing: -0.02em; }
@@ -198,7 +200,7 @@ textarea { min-height: 84px; resize: vertical; }
 .progress i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); transition: background .25s; }
 .progress i.on { background: var(--brand); }
 .step-title { margin: 10px 0 12px; font-weight: 600; font-size: 15px; }
-.mini-total { position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 10px 14px; border-radius: 14px; background: var(--graphite); color: #fff; font-size: 14px; }
+.mini-total { position: sticky; top: var(--safe-top); z-index: 2; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 10px 14px; border-radius: 14px; background: var(--graphite); color: #fff; font-size: 14px; }
 .mini-total b { font: 700 16px/1.2 var(--heading); }
 .pane { min-width: 0; margin: 0; padding: 0; border: 0; animation: step-in .22s ease-out; }
 @keyframes step-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
